@@ -8,7 +8,7 @@
 > pasó y cuándo, pero no se actualizan ni deben usarse como referencia de
 > implementación.
 >
-> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5, PR pendiente; §25)
+> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5, PR pendiente; §25; productos B1b issue #7, PR pendiente; §26)
 > - Rama base de referencia: `dev`
 
 ---
@@ -71,6 +71,7 @@
 | [§23](#23-autenticación-y-autorización-jwt)                          | Autenticación y autorización (JWT)           | Nuevo                                      |
 | [§24](#24-carrito-en-redis-y-arquitectura-stateless)                 | Carrito en Redis y arquitectura stateless    | Nuevo                                      |
 | [§25](#25-lecturas-home-y-categorías-api)                            | Lecturas home y categorías (API JSON)        | Nuevo                                      |
+| [§26](#26-endpoints-de-productos-api-json)                          | Productos API JSON (B1b)                     | Nuevo                                      |
 
 ---
 
@@ -939,8 +940,8 @@ src/
 │       ├── cart.routes.ts          ← carrito autenticado (§24)
 │       ├── checkout.routes.ts      ← GET/POST /api/checkout (§24)
 │       ├── orders.routes.ts        ← GET /api/orders y /:id (§23.6)
-│       ├── products.routes.ts      ← scaffold (sin endpoints)
-│       └── reads.routes.ts         ← GET /api/home, /api/categories, /api/categories/:id (§25)
+│       ├── products.routes.ts      ← GET /api/products, GET /api/products/:productId (§26; deuda #91 resuelta)
+│       └── reads.routes.ts         ← GET /api/home, /api/categories, /api/categories/:id (§25), GET /api/search (§26)
 ├── models/                         ← interfaces de datos (user, product, category, cart, order, orderItem, productCategory)
 ├── dtos/                           ← Data Transfer Objects (product.dto, cart.dto, auth.dto, checkout.dto)
 ├── utils/
@@ -957,8 +958,8 @@ Notas:
 
 - `orders.routes.ts` ya tiene `GET /api/orders` y `GET /api/orders/:id`
   (autenticadas, §23.6); `auth.routes.ts` tiene register/login/me (§23).
-  `products.routes.ts` sigue sin endpoints reales (scaffold con guard
-  legacy); las lecturas home/categorías van por `reads.routes.ts` (§25).
+  `products.routes.ts` ahora tiene endpoints reales para listado con sort y detalle + related (§26); el guard legacy `validateCollectionId` se eliminó (deuda #91 resuelta para esta colección, al estilo de §25.3 para categories).
+  `reads.routes.ts` tiene los endpoints de home, categorías y búsqueda (§25, §26).
   `categories.routes.ts` se eliminó en §25: sus endpoints reales viven en
   `reads.routes.ts` y el guard legacy `validateCollectionId` dejó de
   aplicarse a `/api/categories` (ver nota en §25.3).
@@ -1897,6 +1898,111 @@ Script añadido a CI en `.github/workflows/ci-cd.yml` después de `test:cart`
 
 ---
 
+## §26. Productos API JSON (B1b)
+
+> **Sección nueva** (issue #7).
+
+### §26.1 Endpoints
+
+| Método | Ruta | Sesión | Qué hace |
+| --- | --- | :---: | --- |
+| `GET` | `/api/products` | — | Lista productos; acepta `?sort=asc|desc` |
+| `GET` | `/api/products/:productId` | — | Detalle del producto con hasta 4 relacionados |
+| `GET` | `/api/search?q=` | — | Búsqueda por nombre (LIKE); devuelve array vacío si falta `q` |
+
+### §26.2 Response shapes
+
+**`GET /api/products`** — `ProductView[]` (spec §6.12):
+
+```json
+[{ "id": 1, "name": "Teclado Mecánico", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }]
+```
+
+**`GET /api/products/:productId`** — `ProductDetailView` (spec §6.8):
+
+```json
+{ "product": { "id": 1, "name": "...", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }, "related": [{ "id": 2, "name": "...", "price": 49.5, "inStock": true, "imageUrl": "...", "categories": [...] }] }
+```
+
+**`GET /api/search?q=Mouse`** — `ProductView[]` (spec §6.13):
+
+```json
+[{ "id": 2, "name": "Mouse Gamer", "price": 49.5, "inStock": true, "imageUrl": "...", "categories": [...] }]
+```
+
+### §26.3 Status codes
+
+| Código | Cuándo |
+| ------ | ------ |
+| `200` | Respuesta exitosa |
+| `400` | `productId` no numérico o no entero positivo (spec §6.9); `sort` no es `asc` ni `desc` (spec §6.12) |
+| `404` | Producto no encontrado en la base de datos |
+
+> **Nota (deuda #91 resuelta para esta colección):** hasta esta sección,
+> `/api/products/:segmento` respondía siempre `400 {"error":"Invalid id"}`
+> por el guard legacy `validateCollectionId` (bug de regex preservado a
+> propósito mientras el router era scaffold vacío, ver
+> `validate-id.middleware.ts`). Con endpoints reales, la semántica es la
+> de §6.9: `400` solo para id no numérico/no entero/`<= 0` y `404` para
+> id inexistente. El guard `validateCollectionId` se eliminó de
+> `products.routes.ts` y los endpoints reales se implementaron en el
+> mismo archivo (opción a, alineado con la resolución de §25.3 para
+> categories). La deuda se mantiene solo para `orders` (su router
+> sigue con el guard legacy).
+
+### §26.4 Sort whitelist (spec §6.12)
+
+El query parameter `sort` acepta solo `asc` y `desc`. Cualquier otro
+valor (incluido absent) es rechazado con `400 {"error":"Invalid sort"}`.
+El default es `asc` cuando no se provee.
+
+### §26.5 Search semantics (spec §6.13)
+
+`GET /api/search?q=` usa `productService.searchByName(query)` con
+`LIKE %query%` contra la columna `name`. La query se normaliza
+(trims) y si está vacía o falta, devuelve `[]` (no `400`). Esto
+es coherente con el comportamiento del buscador SSR en
+`pagesController.searchProducts`.
+
+### §26.6 Tests
+
+Script `scripts/test-api-products.ts` (runner `tsx`), que:
+
+- Crea una DB SQLite temporal en `os.tmpdir()` (nunca `dev.db`).
+- Siembra 3 categorías y 4 productos con joins N:M.
+- Levanta la app en un puerto libre con `node --import tsx src/app.ts`.
+- Afirma 11 casos (P1–P11) incluyendo:
+  - Lista de productos (200).
+  - Sort asc ordena por precio ascendente.
+  - Sort desc ordena por precio descendente.
+  - Sort inválido → 400.
+  - Detalle con related para id válido (200).
+  - Detalle con id inexistente → 404.
+  - Detalle con id no numérico → 400.
+  - Búsqueda con término → resultados.
+  - Búsqueda sin query → array vacío.
+  - `GET /` (página SSR) sigue devolviendo 200 HTML (cambio aditivo).
+- Sale con código 0 si todo pasa, 1 si algo falla.
+
+Script añadido a CI en `.github/workflows/ci-cd.yml` después de
+`test:api-reads` (spec §21.4).
+
+### §26.7 Swagger
+
+Los tres endpoints están documentados en `/api-docs` mediante bloques
+`@swagger` en `src/controllers/api/products.controller.ts` y
+`src/controllers/api/reads.controller.ts`. El schema `ProductDetailView`
+fue agregado a `src/config/swagger.ts`. La especificación OpenAPI 3.0
+se genera con `swagger-jsdoc` (spec §10) escaneando
+`src/routes/api/*.routes.ts` y `src/controllers/api/*.controller.ts`.
+
+### §26.8 DTOs
+
+- `src/dtos/product.dto.ts` — `ProductView` (reutilizado) y
+  `ProductDetailView` (nuevo, para la respuesta de detalle).
+
+---
+
 ## Tabla de equivalencias — `§` original → `SPEC.md`
 
 | `§` original (spec sprint 1)  | `§` en `SPEC.md`                              | Estado                                  |
@@ -1935,6 +2041,7 @@ Script añadido a CI en `.github/workflows/ci-cd.yml` después de `test:cart`
 | — (nuevo)                     | §22 Arquitectura de middlewares               | Nuevo                                   |
 | — (nuevo)                     | §23 Autenticación y autorización (JWT)        | Nuevo                                   |
 | — (nuevo)                     | §24 Carrito en Redis y arquitectura stateless | Nuevo                                   |
+| — (nuevo)                     | §26 Productos API JSON (B1b)                  | Nuevo                                   |
 
 ---
 
@@ -1964,6 +2071,7 @@ Script añadido a CI en `.github/workflows/ci-cd.yml` después de `test:cart`
 | 2026-10-11 | Este PR / issue #102 | CSP `upgrade-insecure-requests` configurable por `CSP_UPGRADE_INSECURE` (default `false`); `script-src-attr` para los `onerror` inline; docs en §16/§21.5/§21.6/§22.2 y compose; test M23                                                                                                                    | —                                                       |
 | 2026-10-11 | Este PR / issue #105 | Cookie httpOnly para el JWT (enmienda §23/§24): `auth_token` (`httpOnly`, `SameSite=Lax`, `Secure` según `COOKIE_SECURE`), sin token en el body (C2), `attachUser`/`csrfOrigin`/`requirePageAuth`, header SSR sin hidratación, `auth.js` mínimo con limpieza del token legacy, tests A1–A11 y M1–M23+M24–M27 | `decision-auth-cookie-httponly.md`                      |
 | 2026-11-21 | issue #5 / PR pendiente | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
+| 2026-11-21 | issue #7 / PR pendiente | B1b: endpoints JSON GET /api/products (sort), GET /api/products/:productId (detail+related), GET /api/search; tests test:api-products; Swagger; §26 | — |
 
 ---
 

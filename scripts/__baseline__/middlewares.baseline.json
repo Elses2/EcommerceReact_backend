@@ -64,12 +64,12 @@
         "body": "{\"error\":\"Invalid id\"}"
       },
       "5": {
-        "status": 400,
-        "body": "{\"error\":\"Invalid id\"}"
+        "status": 404,
+        "body": "{\"error\":\"Product not found\"}"
       },
       "999999": {
-        "status": 400,
-        "body": "{\"error\":\"Invalid id\"}"
+        "status": 404,
+        "body": "{\"error\":\"Product not found\"}"
       },
       "-1": {
         "status": 400,
@@ -86,11 +86,11 @@
     },
     "m8c": {
       "extra": 404,
-      "bare": 404
+      "bare": 200
     },
     "m9": {
-      "status": 400,
-      "body": "{\"error\":\"Invalid id\"}"
+      "status": 404,
+      "body": "{\"error\":\"Product not found\"}"
     },
     "m10": {
       "invalid": {

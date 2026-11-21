@@ -80,6 +80,9 @@ jobs:
       - name: Run API reads tests (B1a, spec §25)
         run: npm run test:api-reads
 
+      - name: Run API products tests (B1b, spec §26)
+        run: npm run test:api-products
+
   # ── Job 2: Publish a ghcr.io (solo en push a main) ──────────────────────
   publish:
     name: Build & push Docker image

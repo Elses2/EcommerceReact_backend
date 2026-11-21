@@ -128,4 +128,48 @@ export const readsController = {
     };
     res.json(view);
   },
+
+  /**
+   * Busca productos por nombre (spec §6.13).
+   *
+   * @swagger
+   * /api/search:
+   *   get:
+   *     summary: Búsqueda de productos
+   *     description: Busca productos por nombre con coincidencia parcial (LIKE).
+   *       Devuelve lista vacía si no hay query o no hay resultados.
+   *     tags: [Productos]
+   *     parameters:
+   *       - in: query
+   *         name: q
+   *         required: false
+   *         schema:
+   *           type: string
+   *         description: Término de búsqueda por nombre.
+   *     responses:
+   *       200:
+   *         description: Lista de productos que coinciden con el término.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/Product'
+   *
+   * @param {Request} req - Objeto de solicitud de Express (evalúa `req.query.q`).
+   * @param {Response} res - Respuesta Express con JSON de productos.
+   * @returns {Promise<void>}
+   */
+  async searchProducts(req: Request, res: Response): Promise<void> {
+    const rawQ = req.query.q;
+    const q =
+      typeof rawQ === "string"
+        ? rawQ
+        : Array.isArray(rawQ)
+          ? String(rawQ[0] ?? "")
+          : "";
+    const query = q.trim();
+    const products = query ? productService.searchByName(query) : [];
+    res.json(products);
+  },
 };
