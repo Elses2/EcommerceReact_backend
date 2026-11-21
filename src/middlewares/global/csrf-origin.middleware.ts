@@ -15,6 +15,28 @@ import type { NextFunction, Request, Response } from "express";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**
+ * Host contra el que se compara el `Origin` de la mutación.
+ *
+ * Detrás de un reverse proxy de confianza (spec §27, plan v3 §1-2): el
+ * navegador envía `Origin` con el host PÚBLICO (el del proxy), mientras que
+ * el header `Host` interno es el del upstream. Con `trust proxy` activo,
+ * el host esperado es el primer valor de `X-Forwarded-Host` (el proxy lo
+ * reenvía; plan v3 §2). Sin `trust proxy` se ignora ese header: aceptarlo
+ * sin confianza permitiría spoofing del host desde cualquier cliente.
+ *
+ * @param {Request} req - Petición Express (lee headers y el setting `trust proxy`).
+ * @returns {string} Host esperado para comparar contra `Origin`.
+ */
+function expectedHost(req: Request): string {
+  if (req.app.get("trust proxy")) {
+    const forwarded = req.get("x-forwarded-host");
+    const first = forwarded?.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.get("host") ?? "";
+}
+
+/**
  * Bloquea mutaciones con origen ajeno (C4). `GET`/`HEAD`/`OPTIONS` pasan
  * siempre.
  *
@@ -37,7 +59,7 @@ export function csrfOrigin(
   if (origin) {
     let sameHost = false;
     try {
-      sameHost = new URL(origin).host === req.get("host");
+      sameHost = new URL(origin).host === expectedHost(req);
     } catch {
       /* Origin malformado cae al 403 */
     }

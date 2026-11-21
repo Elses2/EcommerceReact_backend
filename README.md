@@ -145,6 +145,8 @@ Abrí <http://localhost:3000>. La documentación de la API queda en <http://loca
 | `GET` | `/api/products` | — | Lista de productos (opcional `?sort=asc|desc`) |
 | `GET` | `/api/products/:productId` | — | Detalle de producto con relacionados |
 | `GET` | `/api/search?q=` | — | Búsqueda de productos por nombre |
+| `GET` | `/api/checkout/confirmation/:token` | — | Confirmación de orden por token (JSON, público) |
+| `GET` | `/api/health` | — | Health check sin dependencias |
 
 Páginas renderizadas en servidor: `/`, `/products`, `/products/:id`, `/categories/:id`, `/search?query=`, `/cart`, `/checkout` y `/checkout/confirmation/:token`. `/cart` y `/checkout` redirigen a `/login` si no hay sesión.
 
@@ -189,6 +191,7 @@ El detalle de cada decisión está en [`SPEC.md`](./spectsEccomerce/SPEC.md), la
 | `npm run test:cart` | Carrito en Redis, casos C1–C6: aislamiento entre usuarios, concurrencia, persistencia |
 | `npm run test:api-reads` | Lecturas home/categorías (B1a, spec §25): /api/home, /api/categories, /api/categories/:id |
 | `npm run test:api-products` | Productos API (B1b, spec §26): /api/products, /api/products/:id, /api/search |
+| `npm run test:api-ops` | Operaciones B2 (spec §27): confirmación, health, csrfOrigin con trust proxy |
 | `npm run build:docs` | Regenera `docs/` (TypeDoc + grafo de dependencias, requiere Graphviz) |
 
 Los tests usan una base SQLite temporal y nunca tocan `dev.db`. Terminan con exit code distinto de 0 si algo falla. `test:cart` usa la base `/15` de Redis y solo hace `FLUSHDB` si la URL apunta ahí.

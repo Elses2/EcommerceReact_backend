@@ -83,6 +83,9 @@ jobs:
       - name: Run API products tests (B1b, spec §26)
         run: npm run test:api-products
 
+      - name: Run API ops tests (B2, spec §27)
+        run: npm run test:api-ops
+
   # ── Job 2: Publish a ghcr.io (solo en push a main) ──────────────────────
   publish:
     name: Build & push Docker image

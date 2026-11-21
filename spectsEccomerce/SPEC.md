@@ -2085,15 +2085,31 @@ El campo `order` no expone `user_id`, `checkout_token`, ni datos de envío (`shi
 
 ### §27.5 csrfOrigin con trust proxy
 
-**Verificación**: con `trust proxy = 1`, `req.get("host")` resuelve a `X-Forwarded-Host` cuando está presente (el header que nginx envía con el host original del cliente). El middleware `csrfOrigin` compara `new URL(origin).host` contra `req.get("host")`.
+**Cambio requerido en el middleware** (`src/middlewares/global/csrf-origin.middleware.ts`):
+detrás del proxy, el navegador envía `Origin` con el host PÚBLICO (el del
+proxy) mientras el header `Host` interno es el del upstream. `req.get("host")`
+devuelve el header `Host` **crudo** — `trust proxy` no lo reescribe (quien
+honra `X-Forwarded-Host` es `req.hostname`) — así que la comparación original
+daba 403 para requests legítimas del proxy (verificado: fallaba el caso CS1).
+
+El middleware ahora resuelve el host esperado con el helper `expectedHost`:
+
+- Con `trust proxy` activo (`req.app.get("trust proxy")`): usa el primer valor
+de `X-Forwarded-Host` (nginx lo reenvía con el host público; plan v3 §2). Es
+el mismo criterio que usa Express para `req.hostname`.
+- Sin `trust proxy`: el header `X-Forwarded-Host` se **ignora** — aceptarlo sin
+confianza permitiría spoofing del host desde cualquier cliente.
+- La comparación sigue siendo de host (`new URL(origin).host`), sin esquema.
 
 Resultado:
-- POST con `Origin` matching el host del proxy + `X-Forwarded-Host` → **pasa** (no 403). El middleware ve el mismo host en ambos lados.
+- POST con `Origin` matching el host del proxy (`X-Forwarded-Host`) → **pasa** (no 403).
 - POST con `Origin` extranjero → **403** (`{ error: "Origen no permitido" }).
 - POST sin `Origin` + `Sec-Fetch-Site: cross-site` → **403**.
 - POST sin `Origin` ni `Sec-Fetch-Site` (curl, tests) → **pasa** (cliente no navegador, C4).
 
-La configuración de trust proxy **no requiere cambios** en el middleware `csrfOrigin`. El middleware existente ya usa `req.get("host")`, que con `trust proxy = 1` resuelve correctamente al host del proxy.
+La caracterización existente de `csrfOrigin` (§22, M-tests) queda intacta:
+ningún test previo enviaba `X-Forwarded-Host`, y sin él el comportamiento es
+idéntico al anterior.
 
 ### §27.6 Tests
 

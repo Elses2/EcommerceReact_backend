@@ -172,4 +172,37 @@ export const readsController = {
     const products = query ? productService.searchByName(query) : [];
     res.json(products);
   },
+
+  /**
+   * Health check público y sin dependencias (spec §27).
+   *
+   * No comprueba Redis ni base de datos: el propósito es verificar
+   * que la app está levantada y responde. Cualquier comprobación de
+   * infraestructura se deja fuera del camino crítico.
+   *
+   * @swagger
+   * /api/health:
+   *   get:
+   *     summary: Health check
+   *     description: Respuesta mínima sin dependencias; verifica que la app está levantada.
+   *     tags: [Lecturas]
+   *     responses:
+   *       200:
+   *         description: Estado ok.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   example: ok
+   *
+   * @param {Request} _req - Objeto de solicitud de Express (no utilizado).
+   * @param {Response} res - Respuesta Express.
+   * @returns {Promise<void>}
+   */
+  async getHealth(_req: Request, res: Response): Promise<void> {
+    res.json({ status: "ok" });
+  },
 };

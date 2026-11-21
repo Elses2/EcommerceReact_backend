@@ -27,6 +27,7 @@
     "test:cart": "tsx scripts/test-cart.ts",
     "test:api-reads": "tsx scripts/test-api-reads.ts",
     "test:api-products": "tsx scripts/test-api-products.ts",
+    "test:api-ops": "tsx scripts/test-api-ops.ts",
     "build:docs": "typedoc --options scripts/typedoc.json && npm run graph:deps",
     "graph:deps": "node -e \"require('fs').mkdirSync('docs/graphs',{recursive:true})\" && madge --extensions ts --ts-config tsconfig.json --image docs/graphs/dependencias.svg src",
     "graph:circular": "madge --extensions ts --ts-config tsconfig.json --circular src",
