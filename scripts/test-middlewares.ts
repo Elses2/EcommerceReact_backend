@@ -439,13 +439,14 @@ async function runHttpSuite(baseUrl: string): Promise<void> {
     },
   );
 
-  // M8: variantes de id en colecciones. Baseline real: el guard legacy de
-  // products/categories responde 400 para TODA ruta de un segmento (§22.5).
+  // M8: variantes de id en colecciones. Legacy guard removed (§26);
+  // validateId middleware handles format (400 for non-numeric), and
+  // the controller handles existence (404 for missing).
   await check(
-    "M8: ids de colección (0/-1/1.5/5/999999) → 400 (guard legacy)",
+    "M8: ids de colección (0/-1/1.5) → 400 (validateId), (5/999999) → 404 (not found)",
     async () => {
       const observed: Record<string, unknown> = {};
-      for (const id of ["0", "-1", "1.5", "5", "999999"]) {
+      for (const id of ["0", "-1", "1.5"]) {
         const res = await request("GET", `${baseUrl}/api/products/${id}`);
         observed[id] = { status: res.status, body: res.text };
         equal(res.status, 400, `/api/products/${id} → 400`);
@@ -455,11 +456,17 @@ async function runHttpSuite(baseUrl: string): Promise<void> {
           `/api/products/${id} cuerpo`,
         );
       }
+      for (const id of ["5", "999999"]) {
+        const res = await request("GET", `${baseUrl}/api/products/${id}`);
+        observed[id] = { status: res.status, body: res.text };
+        equal(res.status, 404, `/api/products/${id} → 404`);
+      }
       observations.m8 = observed;
     },
   );
 
-  // M8b: categories (guard legacy) y orders (validateId por ruta) → 400.
+  // M8b: categories → 400 por id no numérico (normalizeId en controller, §6.9/§26)
+  // y orders → 400 por el guard legacy aún vigente en su scaffold (§22.5, deuda #91).
   await check("M8b: /api/categories/abc y /api/orders/abc → 400", async () => {
     const categories = await request("GET", `${baseUrl}/api/categories/abc`);
     const orders = await request("GET", `${baseUrl}/api/orders/abc`);
@@ -468,23 +475,23 @@ async function runHttpSuite(baseUrl: string): Promise<void> {
     equal(orders.status, 400, "orders 400");
   });
 
-  // M8c: límites del guard: multi-segmento y sin segmento NO se validan (404).
+  // M8c: sin segmento ahora coincide con GET /api/products/ (lista), multi-segmento → 404.
   await check(
-    "M8c: /api/products/5/extra y /api/products/ → 404 (fuera del guard)",
+    "M8c: /api/products/5/extra → 404, /api/products/ → 200 (lista)",
     async () => {
       const extra = await request("GET", `${baseUrl}/api/products/5/extra`);
       const bare = await request("GET", `${baseUrl}/api/products/`);
       observations.m8c = { extra: extra.status, bare: bare.status };
       equal(extra.status, 404, "multi-segmento 404");
-      equal(bare.status, 404, "sin segmento 404");
+      equal(bare.status, 200, "sin segmento 200 (lista de productos)");
     },
   );
 
-  // M9: id numérico inexistente en products → 400 (guard legacy, §22.5).
-  await check("M9: GET /api/products/999999 → 400 (guard legacy)", async () => {
+  // M9: id numérico inexistente en products → 404 (controller, §6.9).
+  await check("M9: GET /api/products/999999 → 404 (not found)", async () => {
     const res = await request("GET", `${baseUrl}/api/products/999999`);
     observations.m9 = { status: res.status, body: res.text };
-    equal(res.status, 400, "status 400 (guard legacy)");
+    equal(res.status, 404, "status 404 (not found)");
   });
 
   // M10: páginas /products/:id (validación por helper en el controller).
