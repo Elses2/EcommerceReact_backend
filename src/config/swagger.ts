@@ -121,6 +121,50 @@ const spec = swaggerJSDoc({
             product_name: { type: "string" },
           },
         },
+        Category: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            name: { type: "string" },
+            description: { type: "string" },
+          },
+        },
+        PromoBanner: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            subtitle: { type: "string", nullable: true },
+            imageUrl: { type: "string" },
+            linkUrl: { type: "string", nullable: true },
+          },
+        },
+        HomeView: {
+          type: "object",
+          properties: {
+            banners: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PromoBanner" },
+            },
+            suggested: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+            mostOrdered: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+          },
+        },
+        CategoryView: {
+          type: "object",
+          properties: {
+            category: { $ref: "#/components/schemas/Category" },
+            products: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+          },
+        },
       },
     },
   },
