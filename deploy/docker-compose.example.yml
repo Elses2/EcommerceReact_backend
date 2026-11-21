@@ -45,6 +45,9 @@ services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Definir REDIS_PASSWORD en .env}"]
+    environment:
+      # Para el healthcheck (redis-cli -a $$REDIS_PASSWORD).
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Definir REDIS_PASSWORD en .env}
     # Sin puertos publicados: solo accesible dentro de la red del compose (spec §21.6).
     volumes:
       # Datos de Redis (carrito con TTL de 30 días, spec §24.1). Ruta genérica.
@@ -52,8 +55,6 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
-      environment:
-        REDIS_PASSWORD: ${REDIS_PASSWORD}
       interval: 10s
       timeout: 3s
       retries: 5
