@@ -12,5 +12,6 @@ const router = Router();
 router.get("/home", readsController.getHome);
 router.get("/categories", readsController.listCategories);
 router.get("/categories/:categoryId", readsController.getCategory);
+router.get("/search", readsController.searchProducts);
 
 export default router;

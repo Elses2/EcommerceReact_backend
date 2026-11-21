@@ -165,6 +165,16 @@ const spec = swaggerJSDoc({
             },
           },
         },
+        ProductDetailView: {
+          type: "object",
+          properties: {
+            product: { $ref: "#/components/schemas/Product" },
+            related: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+          },
+        },
       },
     },
   },
