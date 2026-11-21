@@ -8,7 +8,7 @@
 > pasó y cuándo, pero no se actualizan ni deben usarse como referencia de
 > implementación.
 >
-> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5 / PR #6, §25; productos B1b issue #7 / PR #8, §26; checkout confirmation JSON + health + trust proxy + csrfOrigin B2 issue #9, §27; caracterización M8/M8c/M9 actualizada, deuda #91)
+> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5 / PR #6, §25; productos B1b issue #7 / PR #8, §26; checkout confirmation JSON + health + trust proxy + csrfOrigin B2 issue #9 / PR #12, §27; caracterización M8/M8c/M9 actualizada, deuda #91)
 > - Rama base de referencia: `dev`
 
 ---
@@ -2212,7 +2212,7 @@ Script `scripts/test-api-ops.ts` (`npm run test:api-ops`, runner `tsx`), que:
 | 2026-10-11 | Este PR / issue #105 | Cookie httpOnly para el JWT (enmienda §23/§24): `auth_token` (`httpOnly`, `SameSite=Lax`, `Secure` según `COOKIE_SECURE`), sin token en el body (C2), `attachUser`/`csrfOrigin`/`requirePageAuth`, header SSR sin hidratación, `auth.js` mínimo con limpieza del token legacy, tests A1–A11 y M1–M23+M24–M27 | `decision-auth-cookie-httponly.md`                      |
 | 2026-11-21 | issue #5 / PR #6 | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
 | 2026-11-21 | issue #7 / PR #8 | B1b: endpoints JSON GET /api/products (sort), GET /api/products/:productId (detail+related), GET /api/search; tests test:api-products; Swagger; §26; caracterización M8/M8c/M9 y baseline actualizados (deuda #91 resuelta para /api/products) | — |
-| 2026-11-21 | issue #9 / PR pendiente | B2: GET /api/checkout/confirmation/:token (JSON), GET /api/health, trust proxy, csrfOrigin con tests; §27 | — |
+| 2026-11-21 | issue #9 / PR #12 | B2: GET /api/checkout/confirmation/:token (JSON), GET /api/health, trust proxy, csrfOrigin con tests; §27 | — |
 
 ---
 
