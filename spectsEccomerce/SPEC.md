@@ -1987,6 +1987,25 @@ Script `scripts/test-api-products.ts` (runner `tsx`), que:
 Script añadido a CI en `.github/workflows/ci-cd.yml` después de
 `test:api-reads` (spec §21.4).
 
+#### Actualización de la caracterización M8/M8c/M9 (deuda #91)
+
+Al implementar endpoints reales en `/api/products` cambió el comportamiento
+que los tests de caracterización (`scripts/test-middlewares.ts`) tenían
+fijado, y se actualizaron junto con su baseline
+(`scripts/__baseline__/middlewares.baseline.json`):
+
+| Test | Antes (guard legacy, bug #91) | Ahora (§6.9/§6.12) |
+| ---- | ---- | ---- |
+| M8 | ids `0/-1/1.5/5/999999` → 400 para todos | `0/-1/1.5` → 400 (`validateId`); `5/999999` → 404 (controller: producto inexistente) |
+| M8c | `/api/products/` → 404 (fuera del guard) | `200` (existe `GET /api/products`, el listado) |
+| M9 | `999999` → 400 | `404` (producto inexistente) |
+
+El motivo es el mismo de la nota de §25.3: el guard legacy respondía 400 a
+todo segmento (bug de regex preservado a propósito mientras las rutas eran
+scaffolds vacíos, issue #91). Con endpoints reales rige §6.9. La deuda queda
+únicamente en `/api/orders` (M8b: `/api/orders/abc` → 400 por el guard;
+`/api/categories/abc` → 400 ahora por `normalizeId` en el controller).
+
 ### §26.7 Swagger
 
 Los tres endpoints están documentados en `/api-docs` mediante bloques
@@ -2070,8 +2089,8 @@ se genera con `swagger-jsdoc` (spec §10) escaneando
 | 2026-10-11 | Este PR / issue #97  | Carrito en Redis y stateless (§24, parte 3/3): `cart.repository` (Hash + TTL), carrito/checkout autenticados por API JSON, `helmet`, eliminación de `express-session` y de `injectCartCount`, compose con Redis, tests C1–C6 y M1–M22 actualizados                                                           | —                                                       |
 | 2026-10-11 | Este PR / issue #102 | CSP `upgrade-insecure-requests` configurable por `CSP_UPGRADE_INSECURE` (default `false`); `script-src-attr` para los `onerror` inline; docs en §16/§21.5/§21.6/§22.2 y compose; test M23                                                                                                                    | —                                                       |
 | 2026-10-11 | Este PR / issue #105 | Cookie httpOnly para el JWT (enmienda §23/§24): `auth_token` (`httpOnly`, `SameSite=Lax`, `Secure` según `COOKIE_SECURE`), sin token en el body (C2), `attachUser`/`csrfOrigin`/`requirePageAuth`, header SSR sin hidratación, `auth.js` mínimo con limpieza del token legacy, tests A1–A11 y M1–M23+M24–M27 | `decision-auth-cookie-httponly.md`                      |
-| 2026-11-21 | issue #5 / PR pendiente | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
-| 2026-11-21 | issue #7 / PR pendiente | B1b: endpoints JSON GET /api/products (sort), GET /api/products/:productId (detail+related), GET /api/search; tests test:api-products; Swagger; §26 | — |
+| 2026-11-21 | issue #5 / PR #6 | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
+| 2026-11-21 | issue #7 / PR #8 | B1b: endpoints JSON GET /api/products (sort), GET /api/products/:productId (detail+related), GET /api/search; tests test:api-products; Swagger; §26; caracterización M8/M8c/M9 y baseline actualizados (deuda #91 resuelta para /api/products) | — |
 
 ---
 
