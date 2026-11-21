@@ -175,6 +175,34 @@ const spec = swaggerJSDoc({
             },
           },
         },
+        ConfirmationView: {
+          type: "object",
+          properties: {
+            order: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                total: { type: "number" },
+                status: {
+                  type: "string",
+                  enum: ["pending", "paid", "failed", "cancelled"],
+                },
+                created_at: { type: "string", nullable: true },
+              },
+            },
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  product_name: { type: "string" },
+                  quantity: { type: "integer" },
+                  unit_price: { type: "number" },
+                },
+              },
+            },
+          },
+        },
       },
     },
   },
