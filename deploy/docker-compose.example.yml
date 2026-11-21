@@ -1,0 +1,59 @@
+# Ejemplo de referencia del stack de producción (backend + redis).
+# NO es el despliegue real: el despliegue lo define el usuario.
+# Copiar a docker-compose.yml, crear el .env real a partir de deploy/.env.example
+# y ajustar rutas, puertos y red según el servidor.
+#
+# Uso:
+#   cp deploy/.env.example .env   # completar valores reales (nunca commitear .env)
+#   docker compose up -d
+#
+# Referencias: spec spectsEccomerce/SPEC.md §16 (variables), §21.6 (producción).
+
+services:
+  backend:
+    image: ghcr.io/elses2/ecommercereact_backend:latest
+    # Sin puertos publicados en el ejemplo: el acceso queda a cargo del proxy
+    # del usuario. Para pruebas directas, descomentar:
+    # ports:
+    #   - "3000:3000"
+    environment:
+      PORT: 3000
+      # Redis lo arma este compose (redis + password); no se define por .env.
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Definir REDIS_PASSWORD en .env}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:?Definir JWT_SECRET en .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-2h}
+      # false SOLO si el sitio se sirve por HTTP. Detrás de HTTPS: true.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CSP_UPGRADE_INSECURE: ${CSP_UPGRADE_INSECURE:-false}
+      FALLBACK_IMAGE_URL: ${FALLBACK_IMAGE_URL:-https://placehold.co/600x600?text=Sin+imagen}
+      DB_PATH: /data/shop.db
+    volumes:
+      # Volumen genérico de datos SQLite. Reemplazar ./data por la ruta real del usuario.
+      - ./data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # Verificación TCP/HTTP interna; no depende de curl/wget en la imagen.
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Definir REDIS_PASSWORD en .env}"]
+    # Sin puertos publicados: solo accesible dentro de la red del compose (spec §21.6).
+    volumes:
+      # Datos de Redis (carrito con TTL de 30 días, spec §24.1). Ruta genérica.
+      - ./redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      environment:
+        REDIS_PASSWORD: ${REDIS_PASSWORD}
+      interval: 10s
+      timeout: 3s
+      retries: 5
