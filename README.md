@@ -208,6 +208,10 @@ docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compo
 
 SQLite y Redis guardan sus datos en carpetas del servidor (`/mnt/nas/EcommerceTwo/data` y `/redis`). Redis no expone puertos: solo lo ve la app. Si servís por HTTPS, poné `COOKIE_SECURE=true` y `CSP_UPGRADE_INSECURE=true` en el `.env`. Los secretos viven ahí, nunca en la imagen. Más detalle en [`SPEC.md §21`](./spectsEccomerce/SPEC.md#21-cicd-y-despliegue).
 
+### Ejemplo de referencia de despliegue
+
+[`deploy/docker-compose.example.yml`](./deploy/docker-compose.example.yml) y [`deploy/env.example`](./deploy/env.example) son un **ejemplo de referencia** del stack nuevo (`backend` + `redis`, con healthchecks y volumen genérico `./data:/data`). **El despliegue real lo define el usuario**: copiar `deploy/env.example` a `.env`, completar los valores y ajustar rutas y puertos del servidor. Variables documentadas en [`SPEC.md §16`](./spectsEccomerce/SPEC.md#16-variables-de-entorno).
+
 <br>
 
 ## Documentación
