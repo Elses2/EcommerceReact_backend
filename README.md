@@ -114,7 +114,7 @@ Abrí <http://localhost:3000>. La documentación de la API queda en <http://loca
 
 ## API
 
-14 endpoints JSON. Los de carrito, checkout y órdenes requieren sesión (cookie o `Authorization: Bearer`).
+17 endpoints JSON. Los de carrito, checkout y órdenes requieren sesión (cookie o `Authorization: Bearer`). Los de home y categorías son públicos (sin sesión).
 
 <img src="./assets/images/endpoints.png" alt="Tabla de los 14 endpoints de la API REST agrupados en Auth, Carrito, Checkout y Órdenes" width="100%">
 
@@ -139,6 +139,9 @@ Abrí <http://localhost:3000>. La documentación de la API queda en <http://loca
 | `POST` | `/api/checkout` | ✓ | Crea la orden, idempotente por token |
 | `GET` | `/api/orders` | ✓ | Historial de órdenes del usuario |
 | `GET` | `/api/orders/:id` | ✓ | Detalle de una orden propia |
+| `GET` | `/api/home` | — | Datos del home (banners, sugeridos, más pedidos) |
+| `GET` | `/api/categories` | — | Lista de categorías |
+| `GET` | `/api/categories/:categoryId` | — | Categoría con sus productos |
 
 Páginas renderizadas en servidor: `/`, `/products`, `/products/:id`, `/categories/:id`, `/search?query=`, `/cart`, `/checkout` y `/checkout/confirmation/:token`. `/cart` y `/checkout` redirigen a `/login` si no hay sesión.
 
@@ -181,6 +184,7 @@ El detalle de cada decisión está en [`SPEC.md`](./spectsEccomerce/SPEC.md), la
 | `npm run test:middlewares` | Middlewares, casos M1–M26: CSP, 404, ids, CSRF, auth, error handler. Requiere `npm run build` |
 | `npm run test:auth` | Auth, casos A1–A11: registro, login, tokens vencidos o manipulados, roles, cookie |
 | `npm run test:cart` | Carrito en Redis, casos C1–C6: aislamiento entre usuarios, concurrencia, persistencia |
+| `npm run test:api-reads` | Lecturas home/categorías (B1a, spec §25): /api/home, /api/categories, /api/categories/:id |
 | `npm run build:docs` | Regenera `docs/` (TypeDoc + grafo de dependencias, requiere Graphviz) |
 
 Los tests usan una base SQLite temporal y nunca tocan `dev.db`. Terminan con exit code distinto de 0 si algo falla. `test:cart` usa la base `/15` de Redis y solo hace `FLUSHDB` si la URL apunta ahí.

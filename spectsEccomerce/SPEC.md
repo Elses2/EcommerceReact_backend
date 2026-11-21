@@ -8,7 +8,7 @@
 > pasó y cuándo, pero no se actualizan ni deben usarse como referencia de
 > implementación.
 >
-> - Última actualización: **2026-10-11** (cookie httpOnly para el JWT §23/§24; CSP configurable §16/§22.2)
+> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5, PR pendiente; §25)
 > - Rama base de referencia: `dev`
 
 ---
@@ -70,6 +70,7 @@
 | [§22](#22-arquitectura-de-middlewares)                               | Arquitectura de middlewares                  | Nuevo                                      |
 | [§23](#23-autenticación-y-autorización-jwt)                          | Autenticación y autorización (JWT)           | Nuevo                                      |
 | [§24](#24-carrito-en-redis-y-arquitectura-stateless)                 | Carrito en Redis y arquitectura stateless    | Nuevo                                      |
+| [§25](#25-lecturas-home-y-categorías-api)                            | Lecturas home y categorías (API JSON)        | Nuevo                                      |
 
 ---
 
@@ -937,9 +938,9 @@ src/
 │       ├── auth.routes.ts          ← register/login/me (§23)
 │       ├── cart.routes.ts          ← carrito autenticado (§24)
 │       ├── checkout.routes.ts      ← GET/POST /api/checkout (§24)
-│       ├── categories.routes.ts
 │       ├── orders.routes.ts        ← GET /api/orders y /:id (§23.6)
-│       └── products.routes.ts
+│       ├── products.routes.ts      ← scaffold (sin endpoints)
+│       └── reads.routes.ts         ← GET /api/home, /api/categories, /api/categories/:id (§25)
 ├── models/                         ← interfaces de datos (user, product, category, cart, order, orderItem, productCategory)
 ├── dtos/                           ← Data Transfer Objects (product.dto, cart.dto, auth.dto, checkout.dto)
 ├── utils/
@@ -956,7 +957,11 @@ Notas:
 
 - `orders.routes.ts` ya tiene `GET /api/orders` y `GET /api/orders/:id`
   (autenticadas, §23.6); `auth.routes.ts` tiene register/login/me (§23).
-  `products.routes.ts` y `categories.routes.ts` siguen sin endpoints reales.
+  `products.routes.ts` sigue sin endpoints reales (scaffold con guard
+  legacy); las lecturas home/categorías van por `reads.routes.ts` (§25).
+  `categories.routes.ts` se eliminó en §25: sus endpoints reales viven en
+  `reads.routes.ts` y el guard legacy `validateCollectionId` dejó de
+  aplicarse a `/api/categories` (ver nota en §25.3).
 - Services con contenido real: `cart.service.ts`, `product.service.ts`,
   `category.service.ts`, `promo.service.ts` y `checkout.service.ts`.
 - `public/` (raíz del proyecto, fuera de `src/`): estáticos del
@@ -1796,6 +1801,102 @@ crea con rol `admin` e `INSERT OR IGNORE` (idempotente).
 
 ---
 
+## §25. Lecturas del home y categorías (API JSON)
+
+> **Sección nueva** (issue #5, B1a del plan v3 §4).
+
+Endpoints JSON públicos para las lecturas del home y categorías, sin
+autenticación. Se implementan siguiendo el patrón de
+`controllers/api/cart.controller.ts` (orquestación fina sobre
+servicios existentes, sin SQL ni lógica de negocio en el
+controller).
+
+### §25.1 Endpoints
+
+| Método | Ruta | Sesión | Qué hace |
+| --- | --- | :---: | --- |
+| `GET` | `/api/home` | — | Devuelve banners, productos sugeridos y los más pedidos |
+| `GET` | `/api/categories` | — | Lista todas las categorías |
+| `GET` | `/api/categories/:categoryId` | — | Devuelve la categoría y sus productos |
+
+### §25.2 Response shapes
+
+**`GET /api/home`** — `HomeView` (spec §6.6b, §6.6, §6.7):
+
+```json
+{
+  "banners": [{ "title": "...", "subtitle": "...", "imageUrl": "...", "linkUrl": "..." }],
+  "suggested": [{ "id": 1, "name": "...", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }],
+  "mostOrdered": [{ "id": 2, "name": "...", "price": 49.5, "inStock": true, "imageUrl": "...", "categories": [...] }]
+}
+```
+
+**`GET /api/categories`** — `Category[]` (spec §1.1):
+
+```json
+[{ "id": 1, "name": "Periféricos", "description": "..." }]
+```
+
+**`GET /api/categories/:categoryId`** — `CategoryView` (spec §6.8):
+
+```json
+{
+  "category": { "id": 1, "name": "Periféricos", "description": "..." },
+  "products": [{ "id": 1, "name": "...", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }]
+}
+```
+
+### §25.3 Status codes
+
+| Código | Cuándo |
+| ------ | ------ |
+| `200` | Respuesta exitosa |
+| `400` | `categoryId` no numérico o no entero positivo (spec §6.9) |
+| `404` | Categoría no encontrada en la base de datos |
+
+> **Nota (deuda #91 resuelta para esta colección):** hasta §25,
+> `/api/categories/:segmento` respondía siempre `400 {"error":"Invalid id"}`
+> por el guard legacy `validateCollectionId` (bug de regex preservado a
+> propósito mientras las rutas eran scaffolds vacíos, ver
+> `validate-id.middleware.ts`). Con endpoints reales, la semántica es la de
+> §6.9: `400` solo para id no numérico/no entero/`<= 0` y `404` para id
+> inexistente. La deuda se mantiene para `products` y `orders` (sus routers
+> siguen vacíos). El archivo `categories.routes.ts` se eliminó.
+
+### §25.4 Swagger
+
+Los tres endpoints están documentados en `/api-docs` mediante bloques
+`@swagger` en `src/controllers/api/reads.controller.ts`. La especificación
+OpenAPI 3.0 se genera con `swagger-jsdoc` (spec §10) escaneando
+`src/routes/api/*.routes.ts` y `src/controllers/api/*.controller.ts`.
+
+### §25.5 Tests
+
+Script `scripts/test-api-reads.ts` (runner `tsx`), que:
+
+- Crea una DB SQLite temporal en `os.tmpdir()` (nunca `dev.db`).
+- Siembra 3 categorías y 4 productos con joins N:M.
+- Levanta la app en un puerto libre con `node --import tsx src/app.ts`.
+- Afirma las 9 lecturas (R1–R9) incluyendo:
+  - `/api/home` devuelve los tres arrays con shape correcta.
+  - `/api/categories` lista las categorías seedeadas.
+  - `/api/categories/:id` devuelve category + products para id válido.
+  - `/api/categories/:id` devuelve 400 para id no numérico.
+  - `/api/categories/:id` devuelve 404 para id inexistente.
+  - `GET /` (página SSR) sigue devolviendo 200 HTML (cambio aditivo).
+- Sale con código 0 si todo pasa, 1 si algo falla.
+
+Script añadido a CI en `.github/workflows/ci-cd.yml` después de `test:cart`
+(spec §21.4).
+
+### §25.6 DTOs
+
+- `src/dtos/home.dto.ts` — `HomeView` y `CategoryView`.
+- Reutiliza `ProductView` de `src/dtos/product.dto.ts` y
+  `Category` de `src/models/category.model.ts`.
+
+---
+
 ## Tabla de equivalencias — `§` original → `SPEC.md`
 
 | `§` original (spec sprint 1)  | `§` en `SPEC.md`                              | Estado                                  |
@@ -1862,6 +1963,7 @@ crea con rol `admin` e `INSERT OR IGNORE` (idempotente).
 | 2026-10-11 | Este PR / issue #97  | Carrito en Redis y stateless (§24, parte 3/3): `cart.repository` (Hash + TTL), carrito/checkout autenticados por API JSON, `helmet`, eliminación de `express-session` y de `injectCartCount`, compose con Redis, tests C1–C6 y M1–M22 actualizados                                                           | —                                                       |
 | 2026-10-11 | Este PR / issue #102 | CSP `upgrade-insecure-requests` configurable por `CSP_UPGRADE_INSECURE` (default `false`); `script-src-attr` para los `onerror` inline; docs en §16/§21.5/§21.6/§22.2 y compose; test M23                                                                                                                    | —                                                       |
 | 2026-10-11 | Este PR / issue #105 | Cookie httpOnly para el JWT (enmienda §23/§24): `auth_token` (`httpOnly`, `SameSite=Lax`, `Secure` según `COOKIE_SECURE`), sin token en el body (C2), `attachUser`/`csrfOrigin`/`requirePageAuth`, header SSR sin hidratación, `auth.js` mínimo con limpieza del token legacy, tests A1–A11 y M1–M23+M24–M27 | `decision-auth-cookie-httponly.md`                      |
+| 2026-11-21 | issue #5 / PR pendiente | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
 
 ---
 
