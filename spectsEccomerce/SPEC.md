@@ -8,7 +8,7 @@
 > pasó y cuándo, pero no se actualizan ni deben usarse como referencia de
 > implementación.
 >
-> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5, PR pendiente; §25; productos B1b issue #7, PR pendiente; §26)
+> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5 / PR #6, §25; productos B1b issue #7 / PR #8, §26; checkout confirmation JSON + health + trust proxy + csrfOrigin B2 issue #9, §27; caracterización M8/M8c/M9 actualizada, deuda #91)
 > - Rama base de referencia: `dev`
 
 ---
@@ -1987,6 +1987,25 @@ Script `scripts/test-api-products.ts` (runner `tsx`), que:
 Script añadido a CI en `.github/workflows/ci-cd.yml` después de
 `test:api-reads` (spec §21.4).
 
+#### Actualización de la caracterización M8/M8c/M9 (deuda #91)
+
+Al implementar endpoints reales en `/api/products` cambió el comportamiento
+que los tests de caracterización (`scripts/test-middlewares.ts`) tenían
+fijado, y se actualizaron junto con su baseline
+(`scripts/__baseline__/middlewares.baseline.json`):
+
+| Test | Antes (guard legacy, bug #91) | Ahora (§6.9/§6.12) |
+| ---- | ---- | ---- |
+| M8 | ids `0/-1/1.5/5/999999` → 400 para todos | `0/-1/1.5` → 400 (`validateId`); `5/999999` → 404 (controller: producto inexistente) |
+| M8c | `/api/products/` → 404 (fuera del guard) | `200` (existe `GET /api/products`, el listado) |
+| M9 | `999999` → 400 | `404` (producto inexistente) |
+
+El motivo es el mismo de la nota de §25.3: el guard legacy respondía 400 a
+todo segmento (bug de regex preservado a propósito mientras las rutas eran
+scaffolds vacíos, issue #91). Con endpoints reales rige §6.9. La deuda queda
+únicamente en `/api/orders` (M8b: `/api/orders/abc` → 400 por el guard;
+`/api/categories/abc` → 400 ahora por `normalizeId` en el controller).
+
 ### §26.7 Swagger
 
 Los tres endpoints están documentados en `/api-docs` mediante bloques
@@ -2003,7 +2022,111 @@ se genera con `swagger-jsdoc` (spec §10) escaneando
 
 ---
 
-## Tabla de equivalencias — `§` original → `SPEC.md`
+## §27. Backend B2: confirmación JSON, health, trust proxy y csrfOrigin
+
+> **Sección nueva** (issue #9, PR pendiente).
+
+### §27.1 Endpoints
+
+| Método | Ruta | Sesión | Qué hace |
+| --- | --- | :---: | --- |
+| `GET` | `/api/checkout/confirmation/:token` | — | Devuelve la orden y sus items por token de checkout (JSON, público) |
+| `GET` | `/api/health` | — | Health check sin dependencias: `{ status: "ok" }` |
+
+### §27.2 GET /api/checkout/confirmation/:token
+
+**Comportamiento** (spec §19/D7):
+
+- El token es un string de 32 caracteres hex `[a-f0-9]` (el mismo formato que usa el service y la página SSR).
+- **Token malformado** → 404 `{ error: "No encontrada" }`.
+- **Token válido pero orden inexistente** → 404 `{ error: "No encontrada" }`.
+- Ambos casos retornan 404 de forma **uniforme** para evitar enumeración de tokens.
+- **Éxito** → 200 con cuerpo mínimo (solo los campos que el frontend de confirmación necesita).
+
+**Shape de la respuesta exitosa** (`ConfirmationView`):
+
+```json
+{
+  "order": {
+    "id": 1,
+    "total": 29.99,
+    "status": "pending",
+    "created_at": "2026-11-21 10:30:00"
+  },
+  "items": [
+    {
+      "product_name": "Producto Confirm",
+      "quantity": 1,
+      "unit_price": 29.99
+    }
+  ]
+}
+```
+
+El campo `order` no expone `user_id`, `checkout_token`, ni datos de envío (`shipping_*`). El campo `items` no expone `id`, `order_id`, ni `product_id`. Esto sigue el principio de minimalismo: solo lo que el frontend renderiza.
+
+**No se agregan nuevas consultas SQL**: el controller orquesta `checkoutService.getOrderForConfirmation(token)` que internamente usa `orderRepository.findByCheckoutToken` y `orderRepository.findItemsByOrderId`.
+
+**Placement**: la ruta se agrega a `src/routes/api/checkout.routes.ts` (junto a las otras rutas de checkout, antes del `authenticate` middleware que ya está montado en el router; la confirmación es pública y se registra antes del `router.use(authenticate)`).
+
+### §27.3 GET /api/health
+
+**Comportamiento**: devuelve `{ status: "ok" }` con status 200.
+
+**Diseño**: endpoint dependency-free. No comprueba Redis, ni DB, ni red. El propósito es verificar que la app está levantada y responde; cualquier comprobación de infraestructura se deja fuera del camino crítico. Se monta en `src/routes/api/reads.routes.ts` (junto a las otras lecturas públicas: `/api/home`, `/api/categories`, `/api/search`).
+
+### §27.4 Trust proxy
+
+**Configuración**: `app.set("trust proxy", 1)` en `src/app.ts` (un solo hop).
+
+**Justificación**: el backend queda detrás de un nginx host reverse proxy (plan v3 §1-2, mismo origen `tienda.elses.online`). Con `trust proxy = 1`, Express confía en el primer hop (nginx) y lee `X-Forwarded-For`, `X-Forwarded-Host` y `X-Forwarded-Proto` del proxy. Esto hace que `req.ip` y `req.hostname` reflejen al cliente real y no al proxy.
+
+**Nota de despliegue (plan v3 §2)**: nginx envía `X-Forwarded-Proto` usando el valor de Cloudflare cuando está presente. Con `trust proxy`, Express lee correctamente el esquema (`https`) detrás del proxy.
+
+### §27.5 csrfOrigin con trust proxy
+
+**Verificación**: con `trust proxy = 1`, `req.get("host")` resuelve a `X-Forwarded-Host` cuando está presente (el header que nginx envía con el host original del cliente). El middleware `csrfOrigin` compara `new URL(origin).host` contra `req.get("host")`.
+
+Resultado:
+- POST con `Origin` matching el host del proxy + `X-Forwarded-Host` → **pasa** (no 403). El middleware ve el mismo host en ambos lados.
+- POST con `Origin` extranjero → **403** (`{ error: "Origen no permitido" }).
+- POST sin `Origin` + `Sec-Fetch-Site: cross-site` → **403**.
+- POST sin `Origin` ni `Sec-Fetch-Site` (curl, tests) → **pasa** (cliente no navegador, C4).
+
+La configuración de trust proxy **no requiere cambios** en el middleware `csrfOrigin`. El middleware existente ya usa `req.get("host")`, que con `trust proxy = 1` resuelve correctamente al host del proxy.
+
+### §27.6 Tests
+
+Script `scripts/test-api-ops.ts` (`npm run test:api-ops`, runner `tsx`), que:
+
+- Crea una DB SQLite temporal en `os.tmpdir()` (nunca `dev.db`).
+- Siembra 1 usuario, 1 producto, 1 orden con token válido y 1 item.
+- Levanta la app en un puerto libre con `node --import tsx src/app.ts`.
+- Afirma:
+  - Confirmación 200 con orden + items (token válido).
+  - Confirmación 404 con token malformado.
+  - Confirmación 404 con token desconocido.
+  - /api/health 200 `{ status: "ok" }`.
+  - csrfOrigin: POST con Origin matching proxy host + X-Forwarded-Host + X-Forwarded-Proto → no 403 (pasa a authenticate → 401).
+  - csrfOrigin: POST con Origin extranjero → 403.
+  - GET / (página SSR) sigue devolviendo 200 HTML (cambio aditivo).
+- Sale con código 0 si todo pasa, 1 si algo falla.
+
+### §27.7 CI
+
+`test:api-ops` se ejecuta en CI después de `test:api-products` (siguiendo el patrón de B1a/B1b).
+
+### §27.8 Índice
+
+| Recurso | Ubicación |
+| --- | --- |
+| Controller | `src/controllers/api/checkout.controller.ts` (`getConfirmation`) |
+| Router | `src/routes/api/checkout.routes.ts` (`GET /confirmation/:token`) |
+| Health controller | `src/controllers/api/reads.controller.ts` (`getHealth`) |
+| Health router | `src/routes/api/reads.routes.ts` (`GET /health`) |
+| Trust proxy | `src/app.ts` (`app.set("trust proxy", 1)`) |
+| Test script | `scripts/test-api-ops.ts` |
+| Swagger schema | `src/config/swagger.ts` (`ConfirmationView`) |
 
 | `§` original (spec sprint 1)  | `§` en `SPEC.md`                              | Estado                                  |
 | ----------------------------- | --------------------------------------------- | --------------------------------------- |
@@ -2042,6 +2165,7 @@ se genera con `swagger-jsdoc` (spec §10) escaneando
 | — (nuevo)                     | §23 Autenticación y autorización (JWT)        | Nuevo                                   |
 | — (nuevo)                     | §24 Carrito en Redis y arquitectura stateless | Nuevo                                   |
 | — (nuevo)                     | §26 Productos API JSON (B1b)                  | Nuevo                                   |
+| — (nuevo)                     | §27 Backend B2: confirmación, health, trust proxy, csrfOrigin | Nuevo                                   |
 
 ---
 
@@ -2070,8 +2194,9 @@ se genera con `swagger-jsdoc` (spec §10) escaneando
 | 2026-10-11 | Este PR / issue #97  | Carrito en Redis y stateless (§24, parte 3/3): `cart.repository` (Hash + TTL), carrito/checkout autenticados por API JSON, `helmet`, eliminación de `express-session` y de `injectCartCount`, compose con Redis, tests C1–C6 y M1–M22 actualizados                                                           | —                                                       |
 | 2026-10-11 | Este PR / issue #102 | CSP `upgrade-insecure-requests` configurable por `CSP_UPGRADE_INSECURE` (default `false`); `script-src-attr` para los `onerror` inline; docs en §16/§21.5/§21.6/§22.2 y compose; test M23                                                                                                                    | —                                                       |
 | 2026-10-11 | Este PR / issue #105 | Cookie httpOnly para el JWT (enmienda §23/§24): `auth_token` (`httpOnly`, `SameSite=Lax`, `Secure` según `COOKIE_SECURE`), sin token en el body (C2), `attachUser`/`csrfOrigin`/`requirePageAuth`, header SSR sin hidratación, `auth.js` mínimo con limpieza del token legacy, tests A1–A11 y M1–M23+M24–M27 | `decision-auth-cookie-httponly.md`                      |
-| 2026-11-21 | issue #5 / PR pendiente | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
-| 2026-11-21 | issue #7 / PR pendiente | B1b: endpoints JSON GET /api/products (sort), GET /api/products/:productId (detail+related), GET /api/search; tests test:api-products; Swagger; §26 | — |
+| 2026-11-21 | issue #5 / PR #6 | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
+| 2026-11-21 | issue #7 / PR #8 | B1b: endpoints JSON GET /api/products (sort), GET /api/products/:productId (detail+related), GET /api/search; tests test:api-products; Swagger; §26; caracterización M8/M8c/M9 y baseline actualizados (deuda #91 resuelta para /api/products) | — |
+| 2026-11-21 | issue #9 / PR pendiente | B2: GET /api/checkout/confirmation/:token (JSON), GET /api/health, trust proxy, csrfOrigin con tests; §27 | — |
 
 ---
 
