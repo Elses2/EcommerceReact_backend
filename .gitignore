@@ -5,6 +5,11 @@ dist/
 odd/
 
 .env
-dev.db
+.env.*
+!.env.example
+*.db
+*.sqlite
+uploads/
+logs/
 *.log
 .DS_Store

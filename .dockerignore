@@ -10,6 +10,7 @@
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
 
 # Dependencias y build (se regeneran dentro del contenedor)
 node_modules
