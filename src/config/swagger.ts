@@ -121,6 +121,88 @@ const spec = swaggerJSDoc({
             product_name: { type: "string" },
           },
         },
+        Category: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            name: { type: "string" },
+            description: { type: "string" },
+          },
+        },
+        PromoBanner: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            subtitle: { type: "string", nullable: true },
+            imageUrl: { type: "string" },
+            linkUrl: { type: "string", nullable: true },
+          },
+        },
+        HomeView: {
+          type: "object",
+          properties: {
+            banners: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PromoBanner" },
+            },
+            suggested: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+            mostOrdered: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+          },
+        },
+        CategoryView: {
+          type: "object",
+          properties: {
+            category: { $ref: "#/components/schemas/Category" },
+            products: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+          },
+        },
+        ProductDetailView: {
+          type: "object",
+          properties: {
+            product: { $ref: "#/components/schemas/Product" },
+            related: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Product" },
+            },
+          },
+        },
+        ConfirmationView: {
+          type: "object",
+          properties: {
+            order: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                total: { type: "number" },
+                status: {
+                  type: "string",
+                  enum: ["pending", "paid", "failed", "cancelled"],
+                },
+                created_at: { type: "string", nullable: true },
+              },
+            },
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  product_name: { type: "string" },
+                  quantity: { type: "integer" },
+                  unit_price: { type: "number" },
+                },
+              },
+            },
+          },
+        },
       },
     },
   },

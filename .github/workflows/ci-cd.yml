@@ -20,6 +20,7 @@ on:
   pull_request:
     branches:
       - main
+      - dev
 
 # ── Permisos mínimos ─────────────────────────────────────────────────────────
 # El job publish eleva a packages:write solo cuando es necesario.
@@ -67,14 +68,23 @@ jobs:
       - name: Run checkout tests (T1–T7, spec §19.6)
         run: npm run test:checkout
 
-      - name: Run middleware characterization tests (M1–M18, spec §22)
+      - name: Run middleware characterization tests (M1–M27, 26 tests, sin M17 — spec §22)
         run: npm run test:middlewares
 
-      - name: Run auth tests (A1–A8, spec §23)
+      - name: Run auth tests (A1–A11, spec §23)
         run: npm run test:auth
 
       - name: Run cart tests (C1–C6, spec §24)
         run: npm run test:cart
+
+      - name: Run API reads tests (B1a, spec §25)
+        run: npm run test:api-reads
+
+      - name: Run API products tests (B1b, spec §26)
+        run: npm run test:api-products
+
+      - name: Run API ops tests (B2, spec §27)
+        run: npm run test:api-ops
 
   # ── Job 2: Publish a ghcr.io (solo en push a main) ──────────────────────
   publish:

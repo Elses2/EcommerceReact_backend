@@ -7,3 +7,9 @@ export interface ProductView extends Product {
   inStock: boolean;
   imageUrl: string;
 }
+
+/** Vista de detalle de producto con productos relacionados (spec §6.8). */
+export interface ProductDetailView {
+  product: ProductView;
+  related: ProductView[];
+}

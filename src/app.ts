@@ -40,6 +40,12 @@ const app = express();
 // --- 1. Middlewares globales de librería (ver base.middleware.ts) ---
 app.use(baseMiddlewares);
 
+// Trust proxy: un solo hop (nginx host reverse proxy, plan v3 §1-2).
+// req.ip y req.hostname se leen desde el proxy, no desde la conexión
+// directa. csrfOrigin usa req.get("host”) que con trust proxy resuelve
+// X-Forwarded-Host cuando está presente (coincide con el Host del proxy).
+app.set("trust proxy", 1);
+
 // --- 2. Identidad blanda para todas las peticiones (spec §23.3) ---
 // Deja req.user / res.locals.user si hay cookie o header válido; nunca falla.
 app.use(attachUser);

@@ -114,7 +114,7 @@ Abrí <http://localhost:3000>. La documentación de la API queda en <http://loca
 
 ## API
 
-14 endpoints JSON. Los de carrito, checkout y órdenes requieren sesión (cookie o `Authorization: Bearer`).
+17 endpoints JSON. Los de carrito, checkout y órdenes requieren sesión (cookie o `Authorization: Bearer`). Los de home y categorías son públicos (sin sesión).
 
 <img src="./assets/images/endpoints.png" alt="Tabla de los 14 endpoints de la API REST agrupados en Auth, Carrito, Checkout y Órdenes" width="100%">
 
@@ -139,6 +139,14 @@ Abrí <http://localhost:3000>. La documentación de la API queda en <http://loca
 | `POST` | `/api/checkout` | ✓ | Crea la orden, idempotente por token |
 | `GET` | `/api/orders` | ✓ | Historial de órdenes del usuario |
 | `GET` | `/api/orders/:id` | ✓ | Detalle de una orden propia |
+| `GET` | `/api/home` | — | Datos del home (banners, sugeridos, más pedidos) |
+| `GET` | `/api/categories` | — | Lista de categorías |
+| `GET` | `/api/categories/:categoryId` | — | Categoría con sus productos |
+| `GET` | `/api/products` | — | Lista de productos (opcional `?sort=asc|desc`) |
+| `GET` | `/api/products/:productId` | — | Detalle de producto con relacionados |
+| `GET` | `/api/search?q=` | — | Búsqueda de productos por nombre |
+| `GET` | `/api/checkout/confirmation/:token` | — | Confirmación de orden por token (JSON, público) |
+| `GET` | `/api/health` | — | Health check sin dependencias |
 
 Páginas renderizadas en servidor: `/`, `/products`, `/products/:id`, `/categories/:id`, `/search?query=`, `/cart`, `/checkout` y `/checkout/confirmation/:token`. `/cart` y `/checkout` redirigen a `/login` si no hay sesión.
 
@@ -181,6 +189,9 @@ El detalle de cada decisión está en [`SPEC.md`](./spectsEccomerce/SPEC.md), la
 | `npm run test:middlewares` | Middlewares, casos M1–M26: CSP, 404, ids, CSRF, auth, error handler. Requiere `npm run build` |
 | `npm run test:auth` | Auth, casos A1–A11: registro, login, tokens vencidos o manipulados, roles, cookie |
 | `npm run test:cart` | Carrito en Redis, casos C1–C6: aislamiento entre usuarios, concurrencia, persistencia |
+| `npm run test:api-reads` | Lecturas home/categorías (B1a, spec §25): /api/home, /api/categories, /api/categories/:id |
+| `npm run test:api-products` | Productos API (B1b, spec §26): /api/products, /api/products/:id, /api/search |
+| `npm run test:api-ops` | Operaciones B2 (spec §27): confirmación, health, csrfOrigin con trust proxy |
 | `npm run build:docs` | Regenera `docs/` (TypeDoc + grafo de dependencias, requiere Graphviz) |
 
 Los tests usan una base SQLite temporal y nunca tocan `dev.db`. Terminan con exit code distinto de 0 si algo falla. `test:cart` usa la base `/15` de Redis y solo hace `FLUSHDB` si la URL apunta ahí.
@@ -207,6 +218,10 @@ docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compo
 ```
 
 SQLite y Redis guardan sus datos en carpetas del servidor (`/mnt/nas/EcommerceTwo/data` y `/redis`). Redis no expone puertos: solo lo ve la app. Si servís por HTTPS, poné `COOKIE_SECURE=true` y `CSP_UPGRADE_INSECURE=true` en el `.env`. Los secretos viven ahí, nunca en la imagen. Más detalle en [`SPEC.md §21`](./spectsEccomerce/SPEC.md#21-cicd-y-despliegue).
+
+### Ejemplo de referencia de despliegue
+
+[`deploy/docker-compose.example.yml`](./deploy/docker-compose.example.yml) y [`deploy/env.example`](./deploy/env.example) son un **ejemplo de referencia** del stack nuevo (`backend` + `redis`, con healthchecks y volumen genérico `./data:/data`). **El despliegue real lo define el usuario**: copiar `deploy/env.example` a `.env`, completar los valores y ajustar rutas y puertos del servidor. Variables documentadas en [`SPEC.md §16`](./spectsEccomerce/SPEC.md#16-variables-de-entorno).
 
 <br>
 

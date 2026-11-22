@@ -8,7 +8,7 @@
 > pasó y cuándo, pero no se actualizan ni deben usarse como referencia de
 > implementación.
 >
-> - Última actualización: **2026-10-11** (cookie httpOnly para el JWT §23/§24; CSP configurable §16/§22.2)
+> - Última actualización: **2026-11-21** (lecturas home/categorías B1a issue #5 / PR #6, §25; productos B1b issue #7 / PR #8, §26; checkout confirmation JSON + health + trust proxy + csrfOrigin B2 issue #9 / PR #12, §27; caracterización M8/M8c/M9 actualizada, deuda #91)
 > - Rama base de referencia: `dev`
 
 ---
@@ -70,6 +70,8 @@
 | [§22](#22-arquitectura-de-middlewares)                               | Arquitectura de middlewares                  | Nuevo                                      |
 | [§23](#23-autenticación-y-autorización-jwt)                          | Autenticación y autorización (JWT)           | Nuevo                                      |
 | [§24](#24-carrito-en-redis-y-arquitectura-stateless)                 | Carrito en Redis y arquitectura stateless    | Nuevo                                      |
+| [§25](#25-lecturas-home-y-categorías-api)                            | Lecturas home y categorías (API JSON)        | Nuevo                                      |
+| [§26](#26-endpoints-de-productos-api-json)                          | Productos API JSON (B1b)                     | Nuevo                                      |
 
 ---
 
@@ -937,9 +939,9 @@ src/
 │       ├── auth.routes.ts          ← register/login/me (§23)
 │       ├── cart.routes.ts          ← carrito autenticado (§24)
 │       ├── checkout.routes.ts      ← GET/POST /api/checkout (§24)
-│       ├── categories.routes.ts
 │       ├── orders.routes.ts        ← GET /api/orders y /:id (§23.6)
-│       └── products.routes.ts
+│       ├── products.routes.ts      ← GET /api/products, GET /api/products/:productId (§26; deuda #91 resuelta)
+│       └── reads.routes.ts         ← GET /api/home, /api/categories, /api/categories/:id (§25), GET /api/search (§26)
 ├── models/                         ← interfaces de datos (user, product, category, cart, order, orderItem, productCategory)
 ├── dtos/                           ← Data Transfer Objects (product.dto, cart.dto, auth.dto, checkout.dto)
 ├── utils/
@@ -956,7 +958,11 @@ Notas:
 
 - `orders.routes.ts` ya tiene `GET /api/orders` y `GET /api/orders/:id`
   (autenticadas, §23.6); `auth.routes.ts` tiene register/login/me (§23).
-  `products.routes.ts` y `categories.routes.ts` siguen sin endpoints reales.
+  `products.routes.ts` ahora tiene endpoints reales para listado con sort y detalle + related (§26); el guard legacy `validateCollectionId` se eliminó (deuda #91 resuelta para esta colección, al estilo de §25.3 para categories).
+  `reads.routes.ts` tiene los endpoints de home, categorías y búsqueda (§25, §26).
+  `categories.routes.ts` se eliminó en §25: sus endpoints reales viven en
+  `reads.routes.ts` y el guard legacy `validateCollectionId` dejó de
+  aplicarse a `/api/categories` (ver nota en §25.3).
 - Services con contenido real: `cart.service.ts`, `product.service.ts`,
   `category.service.ts`, `promo.service.ts` y `checkout.service.ts`.
 - `public/` (raíz del proyecto, fuera de `src/`): estáticos del
@@ -1796,7 +1802,347 @@ crea con rol `admin` e `INSERT OR IGNORE` (idempotente).
 
 ---
 
-## Tabla de equivalencias — `§` original → `SPEC.md`
+## §25. Lecturas del home y categorías (API JSON)
+
+> **Sección nueva** (issue #5, B1a del plan v3 §4).
+
+Endpoints JSON públicos para las lecturas del home y categorías, sin
+autenticación. Se implementan siguiendo el patrón de
+`controllers/api/cart.controller.ts` (orquestación fina sobre
+servicios existentes, sin SQL ni lógica de negocio en el
+controller).
+
+### §25.1 Endpoints
+
+| Método | Ruta | Sesión | Qué hace |
+| --- | --- | :---: | --- |
+| `GET` | `/api/home` | — | Devuelve banners, productos sugeridos y los más pedidos |
+| `GET` | `/api/categories` | — | Lista todas las categorías |
+| `GET` | `/api/categories/:categoryId` | — | Devuelve la categoría y sus productos |
+
+### §25.2 Response shapes
+
+**`GET /api/home`** — `HomeView` (spec §6.6b, §6.6, §6.7):
+
+```json
+{
+  "banners": [{ "title": "...", "subtitle": "...", "imageUrl": "...", "linkUrl": "..." }],
+  "suggested": [{ "id": 1, "name": "...", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }],
+  "mostOrdered": [{ "id": 2, "name": "...", "price": 49.5, "inStock": true, "imageUrl": "...", "categories": [...] }]
+}
+```
+
+**`GET /api/categories`** — `Category[]` (spec §1.1):
+
+```json
+[{ "id": 1, "name": "Periféricos", "description": "..." }]
+```
+
+**`GET /api/categories/:categoryId`** — `CategoryView` (spec §6.8):
+
+```json
+{
+  "category": { "id": 1, "name": "Periféricos", "description": "..." },
+  "products": [{ "id": 1, "name": "...", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }]
+}
+```
+
+### §25.3 Status codes
+
+| Código | Cuándo |
+| ------ | ------ |
+| `200` | Respuesta exitosa |
+| `400` | `categoryId` no numérico o no entero positivo (spec §6.9) |
+| `404` | Categoría no encontrada en la base de datos |
+
+> **Nota (deuda #91 resuelta para esta colección):** hasta §25,
+> `/api/categories/:segmento` respondía siempre `400 {"error":"Invalid id"}`
+> por el guard legacy `validateCollectionId` (bug de regex preservado a
+> propósito mientras las rutas eran scaffolds vacíos, ver
+> `validate-id.middleware.ts`). Con endpoints reales, la semántica es la de
+> §6.9: `400` solo para id no numérico/no entero/`<= 0` y `404` para id
+> inexistente. La deuda se mantiene para `products` y `orders` (sus routers
+> siguen vacíos). El archivo `categories.routes.ts` se eliminó.
+
+### §25.4 Swagger
+
+Los tres endpoints están documentados en `/api-docs` mediante bloques
+`@swagger` en `src/controllers/api/reads.controller.ts`. La especificación
+OpenAPI 3.0 se genera con `swagger-jsdoc` (spec §10) escaneando
+`src/routes/api/*.routes.ts` y `src/controllers/api/*.controller.ts`.
+
+### §25.5 Tests
+
+Script `scripts/test-api-reads.ts` (runner `tsx`), que:
+
+- Crea una DB SQLite temporal en `os.tmpdir()` (nunca `dev.db`).
+- Siembra 3 categorías y 4 productos con joins N:M.
+- Levanta la app en un puerto libre con `node --import tsx src/app.ts`.
+- Afirma las 9 lecturas (R1–R9) incluyendo:
+  - `/api/home` devuelve los tres arrays con shape correcta.
+  - `/api/categories` lista las categorías seedeadas.
+  - `/api/categories/:id` devuelve category + products para id válido.
+  - `/api/categories/:id` devuelve 400 para id no numérico.
+  - `/api/categories/:id` devuelve 404 para id inexistente.
+  - `GET /` (página SSR) sigue devolviendo 200 HTML (cambio aditivo).
+- Sale con código 0 si todo pasa, 1 si algo falla.
+
+Script añadido a CI en `.github/workflows/ci-cd.yml` después de `test:cart`
+(spec §21.4).
+
+### §25.6 DTOs
+
+- `src/dtos/home.dto.ts` — `HomeView` y `CategoryView`.
+- Reutiliza `ProductView` de `src/dtos/product.dto.ts` y
+  `Category` de `src/models/category.model.ts`.
+
+---
+
+## §26. Productos API JSON (B1b)
+
+> **Sección nueva** (issue #7).
+
+### §26.1 Endpoints
+
+| Método | Ruta | Sesión | Qué hace |
+| --- | --- | :---: | --- |
+| `GET` | `/api/products` | — | Lista productos; acepta `?sort=asc|desc` |
+| `GET` | `/api/products/:productId` | — | Detalle del producto con hasta 4 relacionados |
+| `GET` | `/api/search?q=` | — | Búsqueda por nombre (LIKE); devuelve array vacío si falta `q` |
+
+### §26.2 Response shapes
+
+**`GET /api/products`** — `ProductView[]` (spec §6.12):
+
+```json
+[{ "id": 1, "name": "Teclado Mecánico", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }]
+```
+
+**`GET /api/products/:productId`** — `ProductDetailView` (spec §6.8):
+
+```json
+{ "product": { "id": 1, "name": "...", "price": 89.99, "inStock": true, "imageUrl": "...", "categories": [...] }, "related": [{ "id": 2, "name": "...", "price": 49.5, "inStock": true, "imageUrl": "...", "categories": [...] }] }
+```
+
+**`GET /api/search?q=Mouse`** — `ProductView[]` (spec §6.13):
+
+```json
+[{ "id": 2, "name": "Mouse Gamer", "price": 49.5, "inStock": true, "imageUrl": "...", "categories": [...] }]
+```
+
+### §26.3 Status codes
+
+| Código | Cuándo |
+| ------ | ------ |
+| `200` | Respuesta exitosa |
+| `400` | `productId` no numérico o no entero positivo (spec §6.9); `sort` no es `asc` ni `desc` (spec §6.12) |
+| `404` | Producto no encontrado en la base de datos |
+
+> **Nota (deuda #91 resuelta para esta colección):** hasta esta sección,
+> `/api/products/:segmento` respondía siempre `400 {"error":"Invalid id"}`
+> por el guard legacy `validateCollectionId` (bug de regex preservado a
+> propósito mientras el router era scaffold vacío, ver
+> `validate-id.middleware.ts`). Con endpoints reales, la semántica es la
+> de §6.9: `400` solo para id no numérico/no entero/`<= 0` y `404` para
+> id inexistente. El guard `validateCollectionId` se eliminó de
+> `products.routes.ts` y los endpoints reales se implementaron en el
+> mismo archivo (opción a, alineado con la resolución de §25.3 para
+> categories). La deuda se mantiene solo para `orders` (su router
+> sigue con el guard legacy).
+
+### §26.4 Sort whitelist (spec §6.12)
+
+El query parameter `sort` acepta solo `asc` y `desc`. Cualquier otro
+valor (incluido absent) es rechazado con `400 {"error":"Invalid sort"}`.
+El default es `asc` cuando no se provee.
+
+### §26.5 Search semantics (spec §6.13)
+
+`GET /api/search?q=` usa `productService.searchByName(query)` con
+`LIKE %query%` contra la columna `name`. La query se normaliza
+(trims) y si está vacía o falta, devuelve `[]` (no `400`). Esto
+es coherente con el comportamiento del buscador SSR en
+`pagesController.searchProducts`.
+
+### §26.6 Tests
+
+Script `scripts/test-api-products.ts` (runner `tsx`), que:
+
+- Crea una DB SQLite temporal en `os.tmpdir()` (nunca `dev.db`).
+- Siembra 3 categorías y 4 productos con joins N:M.
+- Levanta la app en un puerto libre con `node --import tsx src/app.ts`.
+- Afirma 11 casos (P1–P11) incluyendo:
+  - Lista de productos (200).
+  - Sort asc ordena por precio ascendente.
+  - Sort desc ordena por precio descendente.
+  - Sort inválido → 400.
+  - Detalle con related para id válido (200).
+  - Detalle con id inexistente → 404.
+  - Detalle con id no numérico → 400.
+  - Búsqueda con término → resultados.
+  - Búsqueda sin query → array vacío.
+  - `GET /` (página SSR) sigue devolviendo 200 HTML (cambio aditivo).
+- Sale con código 0 si todo pasa, 1 si algo falla.
+
+Script añadido a CI en `.github/workflows/ci-cd.yml` después de
+`test:api-reads` (spec §21.4).
+
+#### Actualización de la caracterización M8/M8c/M9 (deuda #91)
+
+Al implementar endpoints reales en `/api/products` cambió el comportamiento
+que los tests de caracterización (`scripts/test-middlewares.ts`) tenían
+fijado, y se actualizaron junto con su baseline
+(`scripts/__baseline__/middlewares.baseline.json`):
+
+| Test | Antes (guard legacy, bug #91) | Ahora (§6.9/§6.12) |
+| ---- | ---- | ---- |
+| M8 | ids `0/-1/1.5/5/999999` → 400 para todos | `0/-1/1.5` → 400 (`validateId`); `5/999999` → 404 (controller: producto inexistente) |
+| M8c | `/api/products/` → 404 (fuera del guard) | `200` (existe `GET /api/products`, el listado) |
+| M9 | `999999` → 400 | `404` (producto inexistente) |
+
+El motivo es el mismo de la nota de §25.3: el guard legacy respondía 400 a
+todo segmento (bug de regex preservado a propósito mientras las rutas eran
+scaffolds vacíos, issue #91). Con endpoints reales rige §6.9. La deuda queda
+únicamente en `/api/orders` (M8b: `/api/orders/abc` → 400 por el guard;
+`/api/categories/abc` → 400 ahora por `normalizeId` en el controller).
+
+### §26.7 Swagger
+
+Los tres endpoints están documentados en `/api-docs` mediante bloques
+`@swagger` en `src/controllers/api/products.controller.ts` y
+`src/controllers/api/reads.controller.ts`. El schema `ProductDetailView`
+fue agregado a `src/config/swagger.ts`. La especificación OpenAPI 3.0
+se genera con `swagger-jsdoc` (spec §10) escaneando
+`src/routes/api/*.routes.ts` y `src/controllers/api/*.controller.ts`.
+
+### §26.8 DTOs
+
+- `src/dtos/product.dto.ts` — `ProductView` (reutilizado) y
+  `ProductDetailView` (nuevo, para la respuesta de detalle).
+
+---
+
+## §27. Backend B2: confirmación JSON, health, trust proxy y csrfOrigin
+
+> **Sección nueva** (issue #9, PR pendiente).
+
+### §27.1 Endpoints
+
+| Método | Ruta | Sesión | Qué hace |
+| --- | --- | :---: | --- |
+| `GET` | `/api/checkout/confirmation/:token` | — | Devuelve la orden y sus items por token de checkout (JSON, público) |
+| `GET` | `/api/health` | — | Health check sin dependencias: `{ status: "ok" }` |
+
+### §27.2 GET /api/checkout/confirmation/:token
+
+**Comportamiento** (spec §19/D7):
+
+- El token es un string de 32 caracteres hex `[a-f0-9]` (el mismo formato que usa el service y la página SSR).
+- **Token malformado** → 404 `{ error: "No encontrada" }`.
+- **Token válido pero orden inexistente** → 404 `{ error: "No encontrada" }`.
+- Ambos casos retornan 404 de forma **uniforme** para evitar enumeración de tokens.
+- **Éxito** → 200 con cuerpo mínimo (solo los campos que el frontend de confirmación necesita).
+
+**Shape de la respuesta exitosa** (`ConfirmationView`):
+
+```json
+{
+  "order": {
+    "id": 1,
+    "total": 29.99,
+    "status": "pending",
+    "created_at": "2026-11-21 10:30:00"
+  },
+  "items": [
+    {
+      "product_name": "Producto Confirm",
+      "quantity": 1,
+      "unit_price": 29.99
+    }
+  ]
+}
+```
+
+El campo `order` no expone `user_id`, `checkout_token`, ni datos de envío (`shipping_*`). El campo `items` no expone `id`, `order_id`, ni `product_id`. Esto sigue el principio de minimalismo: solo lo que el frontend renderiza.
+
+**No se agregan nuevas consultas SQL**: el controller orquesta `checkoutService.getOrderForConfirmation(token)` que internamente usa `orderRepository.findByCheckoutToken` y `orderRepository.findItemsByOrderId`.
+
+**Placement**: la ruta se agrega a `src/routes/api/checkout.routes.ts` (junto a las otras rutas de checkout, antes del `authenticate` middleware que ya está montado en el router; la confirmación es pública y se registra antes del `router.use(authenticate)`).
+
+### §27.3 GET /api/health
+
+**Comportamiento**: devuelve `{ status: "ok" }` con status 200.
+
+**Diseño**: endpoint dependency-free. No comprueba Redis, ni DB, ni red. El propósito es verificar que la app está levantada y responde; cualquier comprobación de infraestructura se deja fuera del camino crítico. Se monta en `src/routes/api/reads.routes.ts` (junto a las otras lecturas públicas: `/api/home`, `/api/categories`, `/api/search`).
+
+### §27.4 Trust proxy
+
+**Configuración**: `app.set("trust proxy", 1)` en `src/app.ts` (un solo hop).
+
+**Justificación**: el backend queda detrás de un nginx host reverse proxy (plan v3 §1-2, mismo origen `tienda.elses.online`). Con `trust proxy = 1`, Express confía en el primer hop (nginx) y lee `X-Forwarded-For`, `X-Forwarded-Host` y `X-Forwarded-Proto` del proxy. Esto hace que `req.ip` y `req.hostname` reflejen al cliente real y no al proxy.
+
+**Nota de despliegue (plan v3 §2)**: nginx envía `X-Forwarded-Proto` usando el valor de Cloudflare cuando está presente. Con `trust proxy`, Express lee correctamente el esquema (`https`) detrás del proxy.
+
+### §27.5 csrfOrigin con trust proxy
+
+**Cambio requerido en el middleware** (`src/middlewares/global/csrf-origin.middleware.ts`):
+detrás del proxy, el navegador envía `Origin` con el host PÚBLICO (el del
+proxy) mientras el header `Host` interno es el del upstream. `req.get("host")`
+devuelve el header `Host` **crudo** — `trust proxy` no lo reescribe (quien
+honra `X-Forwarded-Host` es `req.hostname`) — así que la comparación original
+daba 403 para requests legítimas del proxy (verificado: fallaba el caso CS1).
+
+El middleware ahora resuelve el host esperado con el helper `expectedHost`:
+
+- Con `trust proxy` activo (`req.app.get("trust proxy")`): usa el primer valor
+de `X-Forwarded-Host` (nginx lo reenvía con el host público; plan v3 §2). Es
+el mismo criterio que usa Express para `req.hostname`.
+- Sin `trust proxy`: el header `X-Forwarded-Host` se **ignora** — aceptarlo sin
+confianza permitiría spoofing del host desde cualquier cliente.
+- La comparación sigue siendo de host (`new URL(origin).host`), sin esquema.
+
+Resultado:
+- POST con `Origin` matching el host del proxy (`X-Forwarded-Host`) → **pasa** (no 403).
+- POST con `Origin` extranjero → **403** (`{ error: "Origen no permitido" }).
+- POST sin `Origin` + `Sec-Fetch-Site: cross-site` → **403**.
+- POST sin `Origin` ni `Sec-Fetch-Site` (curl, tests) → **pasa** (cliente no navegador, C4).
+
+La caracterización existente de `csrfOrigin` (§22, M-tests) queda intacta:
+ningún test previo enviaba `X-Forwarded-Host`, y sin él el comportamiento es
+idéntico al anterior.
+
+### §27.6 Tests
+
+Script `scripts/test-api-ops.ts` (`npm run test:api-ops`, runner `tsx`), que:
+
+- Crea una DB SQLite temporal en `os.tmpdir()` (nunca `dev.db`).
+- Siembra 1 usuario, 1 producto, 1 orden con token válido y 1 item.
+- Levanta la app en un puerto libre con `node --import tsx src/app.ts`.
+- Afirma:
+  - Confirmación 200 con orden + items (token válido).
+  - Confirmación 404 con token malformado.
+  - Confirmación 404 con token desconocido.
+  - /api/health 200 `{ status: "ok" }`.
+  - csrfOrigin: POST con Origin matching proxy host + X-Forwarded-Host + X-Forwarded-Proto → no 403 (pasa a authenticate → 401).
+  - csrfOrigin: POST con Origin extranjero → 403.
+  - GET / (página SSR) sigue devolviendo 200 HTML (cambio aditivo).
+- Sale con código 0 si todo pasa, 1 si algo falla.
+
+### §27.7 CI
+
+`test:api-ops` se ejecuta en CI después de `test:api-products` (siguiendo el patrón de B1a/B1b).
+
+### §27.8 Índice
+
+| Recurso | Ubicación |
+| --- | --- |
+| Controller | `src/controllers/api/checkout.controller.ts` (`getConfirmation`) |
+| Router | `src/routes/api/checkout.routes.ts` (`GET /confirmation/:token`) |
+| Health controller | `src/controllers/api/reads.controller.ts` (`getHealth`) |
+| Health router | `src/routes/api/reads.routes.ts` (`GET /health`) |
+| Trust proxy | `src/app.ts` (`app.set("trust proxy", 1)`) |
+| Test script | `scripts/test-api-ops.ts` |
+| Swagger schema | `src/config/swagger.ts` (`ConfirmationView`) |
 
 | `§` original (spec sprint 1)  | `§` en `SPEC.md`                              | Estado                                  |
 | ----------------------------- | --------------------------------------------- | --------------------------------------- |
@@ -1834,6 +2180,8 @@ crea con rol `admin` e `INSERT OR IGNORE` (idempotente).
 | — (nuevo)                     | §22 Arquitectura de middlewares               | Nuevo                                   |
 | — (nuevo)                     | §23 Autenticación y autorización (JWT)        | Nuevo                                   |
 | — (nuevo)                     | §24 Carrito en Redis y arquitectura stateless | Nuevo                                   |
+| — (nuevo)                     | §26 Productos API JSON (B1b)                  | Nuevo                                   |
+| — (nuevo)                     | §27 Backend B2: confirmación, health, trust proxy, csrfOrigin | Nuevo                                   |
 
 ---
 
@@ -1862,6 +2210,9 @@ crea con rol `admin` e `INSERT OR IGNORE` (idempotente).
 | 2026-10-11 | Este PR / issue #97  | Carrito en Redis y stateless (§24, parte 3/3): `cart.repository` (Hash + TTL), carrito/checkout autenticados por API JSON, `helmet`, eliminación de `express-session` y de `injectCartCount`, compose con Redis, tests C1–C6 y M1–M22 actualizados                                                           | —                                                       |
 | 2026-10-11 | Este PR / issue #102 | CSP `upgrade-insecure-requests` configurable por `CSP_UPGRADE_INSECURE` (default `false`); `script-src-attr` para los `onerror` inline; docs en §16/§21.5/§21.6/§22.2 y compose; test M23                                                                                                                    | —                                                       |
 | 2026-10-11 | Este PR / issue #105 | Cookie httpOnly para el JWT (enmienda §23/§24): `auth_token` (`httpOnly`, `SameSite=Lax`, `Secure` según `COOKIE_SECURE`), sin token en el body (C2), `attachUser`/`csrfOrigin`/`requirePageAuth`, header SSR sin hidratación, `auth.js` mínimo con limpieza del token legacy, tests A1–A11 y M1–M23+M24–M27 | `decision-auth-cookie-httponly.md`                      |
+| 2026-11-21 | issue #5 / PR #6 | B1a: endpoints JSON GET /api/home, /api/categories, /api/categories/:categoryId; tests test:api-reads; Swagger; §25 | — |
+| 2026-11-21 | issue #7 / PR #8 | B1b: endpoints JSON GET /api/products (sort), GET /api/products/:productId (detail+related), GET /api/search; tests test:api-products; Swagger; §26; caracterización M8/M8c/M9 y baseline actualizados (deuda #91 resuelta para /api/products) | — |
+| 2026-11-21 | issue #9 / PR #12 | B2: GET /api/checkout/confirmation/:token (JSON), GET /api/health, trust proxy, csrfOrigin con tests; §27 | — |
 
 ---
 

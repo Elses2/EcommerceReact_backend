@@ -6,6 +6,9 @@ import type {
 import { checkoutService } from "../../services/checkout.service.js";
 import { cartService } from "../../services/cart.service.js";
 
+// Formato del token de idempotencia (spec §19): 32 hex [a-f0-9].
+const CHECKOUT_TOKEN_PATTERN = /^[a-f0-9]{32}$/;
+
 /**
  * @fileoverview Controller de la API del checkout (spec §19/§24): `GET` devuelve
  * el token de idempotencia + el resumen del carrito (Redis) y `POST` crea la
@@ -26,7 +29,73 @@ function bodyString(body: unknown, field: string): string {
   return typeof value === "string" ? value : "";
 }
 
-export const checkoutApiController = {
+/**
+ * GET /api/checkout/confirmation/:token — JSON público (spec §19/D7).
+ *
+ * El token identifica la orden (nunca se expone `orders.id`).
+ * Cualquier token inválido (malformado o inexistente) devuelve 404
+ * de forma uniforme para evitar enumeración de tokens.
+ * La respuesta mínima incluye solo los campos que el frontend
+ * de confirmación necesita: id, total, status y los items con
+ * nombre + cantidad + precio unitario.
+ *
+ * @swagger
+ * /api/checkout/confirmation/{token}:
+ *   get:
+ *     summary: Confirmación de orden (JSON)
+ *     description: Devuelve la orden y sus items por su token de checkout. Público.
+ *     tags: [Checkout]
+ *     parameters:
+ *       - in: path
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token de checkout de la orden (32 hex).
+ *     responses:
+ *       200:
+ *         description: Orden encontrada con sus items.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ConfirmationView'
+ *       404:
+ *         description: Token malformado u orden inexistente.
+ *
+ * @param {Request} req - Petición Express (requiere `req.params.token`).
+ * @param {Response} res - Respuesta Express.
+ * @returns {Promise<void>}
+ */
+export const checkoutController = {
+  async getConfirmation(req: Request, res: Response): Promise<void> {
+    const raw = req.params.token;
+    const token = Array.isArray(raw) ? (raw[0] ?? "") : (raw ?? "");
+    if (!CHECKOUT_TOKEN_PATTERN.test(token)) {
+      res.status(404).json({ error: "No encontrada" });
+      return;
+    }
+
+    const data = checkoutService.getOrderForConfirmation(token);
+    if (!data) {
+      res.status(404).json({ error: "No encontrada" });
+      return;
+    }
+
+    res.json({
+      order: {
+        id: data.order.id,
+        total: data.order.total,
+        status: data.order.status,
+        created_at: data.order.created_at,
+      },
+      items: data.items.map((item) => ({
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+      })),
+    });
+  },
+
   /**
    * Devuelve el token de idempotencia y el carrito actual (spec §19.2/§24).
    *
